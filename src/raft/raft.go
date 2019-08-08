@@ -172,11 +172,17 @@ func (rf *Raft) readPersist(data []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	index := None
+	term := rf.currentTerm
+	isLeader := rf.role == Leader
 
 	// Your code here (2B).
+	if isLeader {
+		index = rf.lastIndex() + 1
+		rf.log = append(rf.log, LogEntry{Term: term, Index: index, Command: command})
+	}
 
 	return index, term, isLeader
 }

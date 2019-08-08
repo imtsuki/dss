@@ -19,3 +19,17 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 func between(min int, max int) time.Duration {
 	return time.Duration(rand.Intn(max-min)+min) * time.Millisecond
 }
+
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

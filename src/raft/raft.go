@@ -79,6 +79,7 @@ type Raft struct {
 	applyCh     chan ApplyMsg
 	heartbeatCh chan bool
 	leaderCh    chan bool
+	commitCh    chan bool
 
 	voteCount int
 
@@ -181,6 +182,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	if isLeader {
 		index = rf.lastIndex() + 1
+		//fmt.Println("Start on, index", rf.me, index)
 		rf.log = append(rf.log, LogEntry{Term: term, Index: index, Command: command})
 	}
 
@@ -220,6 +222,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyCh = applyCh
 	rf.heartbeatCh = make(chan bool, 64)
 	rf.leaderCh = make(chan bool, 64)
+	rf.commitCh = make(chan bool, 64)
 
 	// Persistent state on all servers:
 	rf.currentTerm = 0
@@ -236,9 +239,30 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-
+	//fmt.Println("init")
 	go rf.Serve()
 
+	go func() {
+		for {
+			select {
+			case <-rf.commitCh:
+				rf.mu.Lock()
+				commitIndex := rf.commitIndex
+				for i := rf.lastApplied + 1; i <= commitIndex; i++ {
+					msg := ApplyMsg{CommandIndex: i, Command: rf.log[i].Command, CommandValid: true}
+					applyCh <- msg
+					//fmt.Printf("me:%d %v\n",rf.me,msg)
+					rf.lastApplied = i
+				}
+				//fmt.Print(rf.me, "now is")
+				//for i := range rf.log {
+				//	fmt.Print(rf.log[i])
+				//}
+				//fmt.Println()
+				rf.mu.Unlock()
+			}
+		}
+	}()
 	return rf
 }
 
@@ -273,6 +297,7 @@ func (rf *Raft) Serve() {
 			case <-rf.leaderCh:
 				rf.mu.Lock()
 				rf.role = Leader
+				//fmt.Println("I am leader", rf.me, "term is", rf.currentTerm)
 				rf.nextIndex = make([]int, len(rf.peers))
 				rf.matchIndex = make([]int, len(rf.peers))
 
@@ -304,10 +329,11 @@ func (rf *Raft) startElection() {
 
 	for i := range rf.peers {
 		if i != rf.me && rf.role == Candidate {
-			go func() {
+			go func(i int, args RequestVoteArgs) {
+				//fmt.Println("I am", rf.me, "request", i, args)
 				var reply RequestVoteReply
 				rf.sendRequestVote(i, &args, &reply)
-			}()
+			}(i, args)
 		}
 	}
 }
@@ -317,13 +343,45 @@ func (rf *Raft) broadcastAppendEntries() {
 	defer rf.mu.Unlock()
 	//fmt.Println(rf.me, "heartbeat", rf.currentTerm)
 
+	//
+	N := rf.commitIndex
+
+	for i := rf.commitIndex + 1; i <= rf.lastIndex(); i++ {
+		num := 1
+		for j := range rf.peers {
+			if j != rf.me && rf.matchIndex[j] >= i && rf.log[i].Term == rf.currentTerm {
+				num++
+			}
+		}
+		if num > len(rf.peers)/2 {
+			N = i
+		}
+	}
+
+	if N > rf.commitIndex {
+		rf.commitIndex = N
+		rf.commitCh <- true
+	}
+
 	for i := range rf.peers {
 		if i != rf.me && rf.role == Leader {
-			args := AppendEntriesArgs{Term: rf.currentTerm, LeaderId: rf.me}
-			go func() {
+			args := AppendEntriesArgs{
+				Term:         rf.currentTerm,
+				LeaderID:     rf.me,
+				PrevLogIndex: rf.nextIndex[i] - 1,
+				PrevLogTerm:  rf.log[rf.nextIndex[i]-1].Term,
+				LeaderCommit: rf.commitIndex,
+			}
+			args.Entries = make([]LogEntry, len(rf.log[args.PrevLogIndex+1:]))
+			copy(args.Entries, rf.log[args.PrevLogIndex+1:])
+
+			go func(server int, args AppendEntriesArgs) {
 				var reply AppendEntriesReply
-				rf.sendAppendEntries(i, &args, &reply)
-			}()
+				if len(args.Entries) > 0 {
+					//fmt.Println(args, "send to", server)
+				}
+				rf.sendAppendEntries(server, &args, &reply)
+			}(i, args)
 		}
 	}
 }

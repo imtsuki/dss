@@ -1,5 +1,7 @@
 package raft
 
+import "fmt"
+
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term         int
@@ -18,20 +20,22 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	//fmt.Println("I am", rf.me, "received", args.CandidateID, "my term", rf.currentTerm)
 	// 任期小，忽略
 	if args.Term < rf.currentTerm {
 		reply.IsVoteGranted = false
 		reply.Term = rf.currentTerm
-
+		//fmt.Println("small")
 		return
 	}
-	// 任期大，无条件转为 Follower
+	// 任期大，无条件转为 Follower（所有服务器收到所有 RPC）
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.role = Follower
 		rf.voteFor = None
 		reply.Term = rf.currentTerm
-		return
+		//fmt.Println("big")
+
 	}
 
 	upToDate := false
@@ -46,7 +50,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term = rf.currentTerm
 	if upToDate && (rf.voteFor == None || rf.voteFor == args.CandidateID) {
 		reply.IsVoteGranted = true
-		rf.role = Follower // 这句让 2A-2 Passed？
+		rf.role = Follower // Why 这句让 2A-2 Passed？
 		rf.voteFor = args.CandidateID
 		rf.currentTerm = args.Term
 	}
@@ -72,6 +76,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 		}
 
 		if reply.IsVoteGranted {
+			fmt.Println("I am", rf.me)
 			rf.voteCount++
 			if rf.voteCount > len(rf.peers)/2 {
 				rf.leaderCh <- true

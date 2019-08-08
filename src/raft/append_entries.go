@@ -20,6 +20,7 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 	defer func() {
 		if !reply.Success {
 			fmt.Println("Rejected", rf.me)
@@ -94,6 +95,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 			rf.currentTerm = reply.Term
 			rf.role = Follower
 			rf.voteFor = None
+			rf.persist()
 			return ok
 		}
 		if reply.Success {

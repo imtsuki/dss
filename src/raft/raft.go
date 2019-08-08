@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"bytes"
+	"encoding/gob"
 	"labrpc"
 	"sync"
 	"time"
@@ -134,6 +136,13 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.voteFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -156,6 +165,11 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+	r := bytes.NewBuffer(data)
+	d := gob.NewDecoder(r)
+	d.Decode(&rf.currentTerm)
+	d.Decode(&rf.voteFor)
+	d.Decode(&rf.log)
 }
 
 //
@@ -184,6 +198,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		index = rf.lastIndex() + 1
 		//fmt.Println("Start on, index", rf.me, index)
 		rf.log = append(rf.log, LogEntry{Term: term, Index: index, Command: command})
+		rf.persist()
 	}
 
 	return index, term, isLeader
@@ -284,6 +299,7 @@ func (rf *Raft) Serve() {
 			rf.currentTerm++
 			rf.voteFor = rf.me
 			rf.voteCount = 1
+			rf.persist()
 			rf.mu.Unlock()
 			go rf.startElection() // 开始选举
 			// 接收选举结果

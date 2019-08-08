@@ -20,6 +20,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 	//fmt.Println("I am", rf.me, "received", args.CandidateID, "my term", rf.currentTerm)
 	// 任期小，忽略
 	if args.Term < rf.currentTerm {
@@ -73,6 +74,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 			rf.currentTerm = reply.Term
 			rf.role = Follower
 			rf.voteFor = None
+			rf.persist()
 		}
 
 		if reply.IsVoteGranted {
